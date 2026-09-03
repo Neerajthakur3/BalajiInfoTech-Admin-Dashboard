@@ -2,14 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   Bell,
-  BarChart3,
   BriefcaseBusiness,
   CheckCircle2,
   ChevronDown,
   Clock3,
   CreditCard,
   Database,
-  DollarSign,
   Eye,
   Mail,
   MessageSquare,
@@ -30,17 +28,15 @@ import DashboardShell from "../components/DashboardShell.jsx";
 import Tasks from "./Tasks.jsx";
 import Messages from "./Messages.jsx";
 import Reports from "./Reports.jsx";
-import Team from "../components/Team.jsx";
+import Team from "./Team.jsx";
 import Calendar from "./Calendar.jsx";
 import Notifications from "./Notifications.jsx";
-import Settings from "../components/Settings.jsx";
+import Settings from "./Settings.jsx";
 
 const API =
-  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  import.meta.env.VITE_API_URL || "https://balajiinfotech-backend-1.onrender.com/api";
 
-const ADMIN_TOKEN_KEY = "balaji_admin_token";
-const TEAM_TOKEN_KEY = "balaji_team_token";
-const SESSION_KEY = "balaji_session_type";
+const TOKEN_KEY = "balaji_admin_token";
 
 const blankProject = {
   title: "",
@@ -116,12 +112,7 @@ const blankPayment = {
 };
 
 async function api(path, options = {}) {
-  const sessionType = localStorage.getItem(SESSION_KEY);
-  const tokenKey =
-    sessionType === "team"
-      ? TEAM_TOKEN_KEY
-      : ADMIN_TOKEN_KEY;
-  const token = localStorage.getItem(tokenKey);
+  const token = localStorage.getItem(TOKEN_KEY);
 
   const headers = {
     "Content-Type": "application/json",
@@ -147,6 +138,32 @@ async function api(path, options = {}) {
 
   return data;
 }
+
+const pushDashboardNotification = (notification) => {
+  try {
+    const current = JSON.parse(
+      localStorage.getItem("balaji_dashboard_notifications") || "[]"
+    );
+    const item = {
+      id: `${notification.type || "system"}-${notification.entityId || "item"}-${Date.now()}`,
+      type: notification.type || "system",
+      tone: notification.tone || "info",
+      title: notification.title,
+      message: notification.message,
+      date: new Date().toISOString(),
+      read: false,
+    };
+    localStorage.setItem(
+      "balaji_dashboard_notifications",
+      JSON.stringify([item, ...current].slice(0, 300))
+    );
+    window.dispatchEvent(
+      new CustomEvent("balaji:notification", { detail: item })
+    );
+  } catch (error) {
+    console.warn("Notification event could not be stored.", error);
+  }
+};
 
 function Modal({ title, close, children, wide = false }) {
   return (
@@ -1786,52 +1803,8 @@ function PaymentForm({ initial, invoices, clients, payments, close, saved }) {
   );
 }
 
-
-function isDashboardAdmin(user) {
-  const role=String(user?.role||"").trim().toLowerCase();
-  return role==="admin" || role==="administrator" ||
-    user?.isAdmin===true || user?.isAdmin==="true";
-}
-function dashboardPermissions(user) {
-  const list=Array.isArray(user?.permissions)?user.permissions:[];
-  return list.flatMap(x=>{
-    if(typeof x==="string") return [x];
-    if(x && typeof x==="object") return [x.value,x.permission,x.key,x.name].filter(Boolean);
-    return [];
-  }).map(x=>String(x).trim().toLowerCase()).filter(Boolean);
-}
-function dashboardCanView(user,module) {
-  if(isDashboardAdmin(user)) return true;
-  const p=dashboardPermissions(user);
-  return p.includes(`${module}.view`) || p.includes(`${module}.manage`) || p.includes(`${module}.admin`);
-}
-function dashboardCanManage(user,module) {
-  if(isDashboardAdmin(user)) return true;
-  const p=dashboardPermissions(user);
-  return p.includes(`${module}.manage`) || p.includes(`${module}.admin`);
-}
-
-export default function Dashboard({ admin, logout, sessionType, isTeamMember }) {
-  const [tab, setTabState] = useState("overview");
-  const TAB_PERMISSIONS = {
-    projects:"projects", packages:"packages", enquiries:"enquiries",
-    clients:"clients", services:"services", invoices:"invoices",
-    payments:"payments", tasks:"tasks", messages:"messages",
-    reports:"reports", notifications:"notifications", calendar:"calendar",
-    revenue:"revenue",
-  };
-  const isAdmin = sessionType === "admin" || isDashboardAdmin(admin);
-  const canView = (m) => isAdmin || dashboardCanView(admin,m);
-  const canManage = (m) => isAdmin || dashboardCanManage(admin,m);
-
-  function setTab(nextTab) {
-    if (nextTab==="overview" || nextTab==="settings") {
-      setTabState(nextTab); return;
-    }
-    const module=TAB_PERMISSIONS[nextTab];
-    if (module && !canView(module)) return;
-    setTabState(nextTab);
-  }
+export default function Dashboard({ admin, logout, isTeamMember = false }) {
+  const [tab, setTab] = useState("overview");
   const [projects, setProjects] = useState([]);
   const [packages, setPackages] = useState([]);
   const [enquiries, setEnquiries] = useState([]);
@@ -1839,7 +1812,6 @@ export default function Dashboard({ admin, logout, sessionType, isTeamMember }) 
   const [services, setServices] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
-  const [tasks, setTasks] = useState([]);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState("all");
   const [serviceSearch, setServiceSearch] = useState("");
@@ -1855,23 +1827,31 @@ export default function Dashboard({ admin, logout, sessionType, isTeamMember }) 
       if (showRefresh) setRefreshing(true);
       else setLoadingData(true);
 
-      const results = await Promise.allSettled([
-        api("/projects"), api("/packages"), api("/enquiries"),
-        api("/clients"), api("/services?status=all&limit=100"),
-        api("/invoices?limit=100"), api("/payments"), api("/tasks"),
+      const [
+        projectResult,
+        packageResult,
+        enquiryResult,
+        clientResult,
+        serviceResult,
+        invoiceResult,
+        paymentResult,
+      ] = await Promise.all([
+        api("/projects"),
+        api("/packages"),
+        api("/enquiries"),
+        api("/clients"),
+        api("/services?status=all&limit=100"),
+        api("/invoices?limit=100"),
+        api("/payments"),
       ]);
-      const value=(i)=>results[i]?.status==="fulfilled" ? results[i].value : {data:[]};
-      setProjects(value(0).data || []);
-      setPackages(value(1).data || []);
-      setEnquiries(value(2).data || []);
-      setClients(value(3).data || []);
-      setServices(value(4).data || []);
-      setInvoices(value(5).data || []);
-      setPayments(value(6).data || []);
-      setTasks(value(7).data || []);
-      if(results.some(r=>r.status==="rejected" && /invalid|expired|authentication required/i.test(r.reason?.message||""))){
-        logout(); return;
-      }
+
+      setProjects(projectResult.data || []);
+      setPackages(packageResult.data || []);
+      setEnquiries(enquiryResult.data || []);
+      setClients(clientResult.data || []);
+      setServices(serviceResult.data || []);
+      setInvoices(invoiceResult.data || []);
+      setPayments(paymentResult.data || []);
     } catch (error) {
       const message = error.message?.toLowerCase() || "";
 
@@ -1933,12 +1913,10 @@ export default function Dashboard({ admin, logout, sessionType, isTeamMember }) 
       paymentFailed: payments.filter(
         (item) => item.status === "Failed"
       ).length,
-      tasks: tasks.length,
     };
-  }, [projects, packages, enquiries, clients, invoices, payments, tasks]);
+  }, [projects, packages, enquiries, clients, invoices, payments]);
 
   async function remove(type, id) {
-    if (!canManage(String(type||"").toLowerCase())) return;
     if (!window.confirm("Delete this item?")) return;
 
     try {
@@ -1950,7 +1928,6 @@ export default function Dashboard({ admin, logout, sessionType, isTeamMember }) 
   }
 
   async function updateEnquiry(id, status) {
-    if (!canManage("enquiries")) return;
     try {
       await api(`/enquiries/${id}`, {
         method: "PUT",
@@ -1963,22 +1940,18 @@ export default function Dashboard({ admin, logout, sessionType, isTeamMember }) 
   }
 
   function openProjectForm(data = blankProject) {
-    if (!canManage("projects")) return;
     setModal({ type: "project", data: { ...data } });
   }
 
   function openPackageForm(data = blankPackage) {
-    if (!canManage("packages")) return;
     setModal({ type: "package", data: { ...data } });
   }
 
   function openClientForm(data = blankClient) {
-    if (!canManage("clients")) return;
     setModal({ type: "client", data: { ...data } });
   }
 
   function openServiceForm(data = blankService) {
-    if (!canManage("services")) return;
     setModal({
       type: "service",
       data: { ...data },
@@ -1986,7 +1959,6 @@ export default function Dashboard({ admin, logout, sessionType, isTeamMember }) 
   }
 
   function openInvoiceForm(data = blankInvoice) {
-    if (!canManage("invoices")) return;
     setModal({
       type: "invoice",
       data: { ...data },
@@ -1994,7 +1966,6 @@ export default function Dashboard({ admin, logout, sessionType, isTeamMember }) 
   }
 
   function openPaymentForm(data = blankPayment) {
-    if (!canManage("payments")) return;
     setModal({
       type: "payment",
       data: {
@@ -2010,32 +1981,6 @@ export default function Dashboard({ admin, logout, sessionType, isTeamMember }) 
   }
 
 
-
-function pushDashboardNotification(notification) {
-  try {
-    const current = JSON.parse(
-      localStorage.getItem("balaji_dashboard_notifications") || "[]"
-    );
-    const item = {
-      id: `${notification.type || "system"}-${notification.entityId || "item"}-${Date.now()}`,
-      type: notification.type || "system",
-      tone: notification.tone || "info",
-      title: notification.title,
-      message: notification.message,
-      date: new Date().toISOString(),
-      read: false,
-    };
-    localStorage.setItem(
-      "balaji_dashboard_notifications",
-      JSON.stringify([item, ...current].slice(0, 300))
-    );
-    window.dispatchEvent(
-      new CustomEvent("balaji:notification", { detail: item })
-    );
-  } catch (error) {
-    console.warn("Notification event could not be stored.", error);
-  }
-}
 
   function getGreeting() {
     const hour = new Date().getHours();
@@ -2085,12 +2030,14 @@ function pushDashboardNotification(notification) {
               {refreshing ? "REFRESHING" : "REFRESH"}
             </button>
 
-            {isAdmin && (
-              <button type="button" className="primary" onClick={() => openProjectForm()}>
-                <Plus size={17} />
-                ADD NEW
-              </button>
-            )}
+            <button
+              type="button"
+              className="primary"
+              onClick={() => openProjectForm()}
+            >
+              <Plus size={17} />
+              ADD NEW
+            </button>
           </div>
         </div>
 
@@ -3224,254 +3171,6 @@ function pushDashboardNotification(notification) {
     );
   }
 
-
-  function renderRevenueAnalytics() {
-    const money = (value) =>
-      `₹${Number(value || 0).toLocaleString("en-IN", {
-        maximumFractionDigits: 2,
-      })}`;
-
-    const dateValue = (value) =>
-      value
-        ? new Date(value).toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          })
-        : "—";
-
-    const successfulPayments = payments.filter(
-      (item) => String(item.status || "").toLowerCase() === "success"
-    );
-
-    const activeInvoices = invoices.filter(
-      (item) => String(item.status || "").toLowerCase() !== "cancelled"
-    );
-
-    const invoicedValue = activeInvoices
-      .filter((item) => String(item.status || "").toLowerCase() !== "draft")
-      .reduce((sum, item) => sum + Number(item.total || 0), 0);
-
-    const collectedValue = successfulPayments.reduce(
-      (sum, item) => sum + Number(item.amount || 0),
-      0
-    );
-
-    const paidInvoiceValue = invoices
-      .filter((item) => String(item.status || "").toLowerCase() === "paid")
-      .reduce((sum, item) => sum + Number(item.total || 0), 0);
-
-    const outstandingValue = Math.max(invoicedValue - collectedValue, 0);
-    const collectionRate = invoicedValue
-      ? Math.min(100, Math.round((collectedValue / invoicedValue) * 100))
-      : 0;
-
-    const averagePayment = successfulPayments.length
-      ? collectedValue / successfulPayments.length
-      : 0;
-
-    const monthKeys = [];
-    const now = new Date();
-    for (let index = 5; index >= 0; index -= 1) {
-      const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
-      monthKeys.push({
-        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
-        label: date.toLocaleDateString("en-IN", { month: "short" }),
-      });
-    }
-
-    const monthlyRevenue = monthKeys.map((month) => {
-      const total = successfulPayments.reduce((sum, payment) => {
-        const date = new Date(payment.paymentDate || payment.createdAt);
-        if (Number.isNaN(date.getTime())) return sum;
-        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        return key === month.key ? sum + Number(payment.amount || 0) : sum;
-      }, 0);
-
-      return { ...month, total };
-    });
-
-    const maxMonth = Math.max(...monthlyRevenue.map((item) => item.total), 1);
-
-    const clientRevenue = {};
-    successfulPayments.forEach((payment) => {
-      const clientName =
-        payment.client?.name ||
-        payment.invoice?.client?.name ||
-        (typeof payment.client === "string" ? payment.client : "Unknown client");
-      clientRevenue[clientName] =
-        (clientRevenue[clientName] || 0) + Number(payment.amount || 0);
-    });
-
-    const topClients = Object.entries(clientRevenue)
-      .map(([name, total]) => ({ name, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-
-    const statusCounts = {
-      paid: invoices.filter((item) => String(item.status || "").toLowerCase() === "paid").length,
-      pending: invoices.filter((item) => ["pending", "overdue"].includes(String(item.status || "").toLowerCase())).length,
-      draft: invoices.filter((item) => String(item.status || "").toLowerCase() === "draft").length,
-    };
-
-    return (
-      <section className="content revenue-page">
-        <PageHeading
-          eyebrow="FINANCE / INSIGHTS"
-          title="Revenue Analytics"
-          action={
-            <button
-              type="button"
-              className="primary small"
-              onClick={() => load(true)}
-              disabled={refreshing}
-              style={{ color: "#fff", WebkitTextFillColor: "#fff" }}
-            >
-              <RefreshCw size={15} className={refreshing ? "spin" : ""} />
-              {refreshing ? "REFRESHING..." : "REFRESH DATA"}
-            </button>
-          }
-        />
-
-        <div className="dashboard-kpis revenue-kpis">
-          <DashboardKpi
-            label="TOTAL INVOICED"
-            value={money(invoicedValue)}
-            description={`${activeInvoices.filter((item) => String(item.status || "").toLowerCase() !== "draft").length} active invoices`}
-            icon={FileInvoiceIcon}
-          />
-          <DashboardKpi
-            label="REVENUE RECEIVED"
-            value={money(collectedValue)}
-            description={`${successfulPayments.length} successful payments`}
-            icon={CheckCircle2}
-            accent
-          />
-          <DashboardKpi
-            label="OUTSTANDING"
-            value={money(outstandingValue)}
-            description="Invoice value not collected"
-            icon={Clock3}
-          />
-          <DashboardKpi
-            label="COLLECTION RATE"
-            value={`${collectionRate}%`}
-            description={`Avg payment ${money(averagePayment)}`}
-            icon={ArrowUpRight}
-          />
-        </div>
-
-        <div className="revenue-grid">
-          <section className="dashboard-card revenue-chart-card">
-            <div className="card-heading">
-              <div>
-                <span className="card-label">CASH FLOW</span>
-                <h2>Monthly Revenue</h2>
-              </div>
-              <div className="card-icon"><DollarSign size={19} /></div>
-            </div>
-
-            <div className="revenue-chart">
-              {monthlyRevenue.map((month) => (
-                <div className="revenue-bar-item" key={month.key} title={`${month.label}: ${money(month.total)}`}>
-                  <div className="revenue-bar-value">{month.total ? money(month.total) : "₹0"}</div>
-                  <div className="revenue-bar-track">
-                    <div
-                      className="revenue-bar-fill"
-                      style={{ height: `${Math.max((month.total / maxMonth) * 100, month.total ? 8 : 3)}%` }}
-                    />
-                  </div>
-                  <span>{month.label}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="dashboard-card revenue-summary-card">
-            <div className="card-heading">
-              <div>
-                <span className="card-label">INVOICE HEALTH</span>
-                <h2>Revenue Summary</h2>
-              </div>
-              <div className="card-icon"><BarChart3 size={19} /></div>
-            </div>
-
-            <div className="revenue-summary-list">
-              <div><span>Paid invoices</span><strong>{statusCounts.paid}</strong></div>
-              <div><span>Pending / overdue</span><strong>{statusCounts.pending}</strong></div>
-              <div><span>Draft invoices</span><strong>{statusCounts.draft}</strong></div>
-              <div><span>Paid invoice value</span><strong>{money(paidInvoiceValue)}</strong></div>
-            </div>
-
-            <div className="collection-meter">
-              <div><span>Collection progress</span><strong>{collectionRate}%</strong></div>
-              <div className="collection-track"><span style={{ width: `${collectionRate}%` }} /></div>
-            </div>
-          </section>
-        </div>
-
-        <div className="revenue-grid revenue-grid-bottom">
-          <section className="dashboard-card revenue-panel">
-            <div className="card-heading">
-              <div>
-                <span className="card-label">TOP CLIENTS</span>
-                <h2>Revenue by Client</h2>
-              </div>
-              <div className="card-icon"><UsersRound size={19} /></div>
-            </div>
-
-            {topClients.length ? (
-              <div className="revenue-client-list">
-                {topClients.map((client) => {
-                  const percentage = collectedValue ? Math.round((client.total / collectedValue) * 100) : 0;
-                  return (
-                    <div className="revenue-client-row" key={client.name}>
-                      <div className="revenue-client-top">
-                        <strong>{client.name}</strong>
-                        <span>{money(client.total)}</span>
-                      </div>
-                      <div className="revenue-client-track"><span style={{ width: `${percentage}%` }} /></div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : <Empty />}
-          </section>
-
-          <section className="dashboard-card revenue-panel">
-            <div className="card-heading">
-              <div>
-                <span className="card-label">REAL BACKEND DATA</span>
-                <h2>Recent Payments</h2>
-              </div>
-              <div className="card-icon"><CreditCard size={19} /></div>
-            </div>
-
-            {successfulPayments.length ? (
-              <div className="table-wrap">
-                <table className="data-table revenue-table">
-                  <thead>
-                    <tr><th>CLIENT</th><th>AMOUNT</th><th>METHOD</th><th>DATE</th></tr>
-                  </thead>
-                  <tbody>
-                    {successfulPayments.slice(0, 8).map((payment) => (
-                      <tr key={payment._id || payment.id}>
-                        <td>{payment.client?.name || payment.invoice?.client?.name || "Unknown client"}</td>
-                        <td><strong>{money(payment.amount)}</strong></td>
-                        <td>{payment.paymentMethod || "—"}</td>
-                        <td>{dateValue(payment.paymentDate || payment.createdAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <Empty />}
-          </section>
-        </div>
-      </section>
-    );
-  }
-
   function renderUnavailableModule(title, description) {
     return (
       <section className="content">
@@ -3504,9 +3203,8 @@ function pushDashboardNotification(notification) {
     if (tab === "services") return renderServices();
     if (tab === "invoices") return renderInvoices();
     if (tab === "payments") return renderPayments();
-    if (tab === "revenue") return renderRevenueAnalytics();
     if (tab === "tasks") {
-      return <Tasks clients={clients} projects={projects} initialTasks={tasks} />;
+      return <Tasks clients={clients} projects={projects} />;
     }
     if (tab === "messages") {
       return (
@@ -3538,7 +3236,7 @@ function pushDashboardNotification(notification) {
     if (tab === "calendar") {
       return (
         <Calendar
-          tasks={tasks}
+          tasks={[]}
           projects={projects}
           invoices={invoices}
         />
@@ -3556,7 +3254,7 @@ function pushDashboardNotification(notification) {
     }
 
     if (tab === "settings") {
-      return <Settings admin={admin} isTeamMember={Boolean(isTeamMember)} />;
+      return <Settings admin={admin} isTeamMember={isTeamMember} />;
     }
 
     const futureModules = {
@@ -3584,15 +3282,6 @@ function pushDashboardNotification(notification) {
       onNavigate={setTab}
       admin={admin}
       onLogout={logout}
-      isTeamMember={Boolean(isTeamMember)}
-      notificationCount={stats.newEnquiries}
-      onAddProject={() => {
-        if (isAdmin) openProjectForm();
-      }}
-      onAddPackage={() => {
-        if (isAdmin) openPackageForm();
-      }}
-      onNotificationClick={() => setTab("notifications")}
     >
       {renderContent()}
 
