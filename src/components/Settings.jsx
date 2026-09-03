@@ -1,397 +1,1570 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  UserRound, LockKeyhole, Save, Upload, Eye, EyeOff,
-  WalletCards, CheckCircle2, AlertCircle
+  UserRound,
+  LockKeyhole,
+  Palette,
+  Bell,
+  Save,
+  ShieldCheck,
+  Sun,
+  Moon,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  AlertCircle,
+  Upload,
 } from "lucide-react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-const SESSION_KEY = "balaji_session_type";
-const ADMIN_TOKEN_KEY = "balaji_admin_token";
-const TEAM_TOKEN_KEY = "balaji_team_token";
+const API =
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:5000/api";
 
-function getToken() {
-  const team = localStorage.getItem(SESSION_KEY) === "team";
-  return localStorage.getItem(team ? TEAM_TOKEN_KEY : ADMIN_TOKEN_KEY);
-}
+const TOKEN_KEY = "balaji_admin_token";
+
+const defaultForm = {
+  name: "",
+  email: "",
+  phone: "",
+  businessName: "BalajiInfoTech",
+  avatarUrl: "",
+};
 
 async function api(path, options = {}) {
-  const token = getToken();
+  const token = localStorage.getItem(TOKEN_KEY);
+
   const response = await fetch(`${API}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : {}),
       ...(options.headers || {}),
     },
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.message || `Request failed (${response.status})`);
+
+  const data = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.message ||
+        `Request failed (${response.status})`
+    );
+  }
+
   return data;
 }
 
-const emptyProfile = {
-  fullName: "", phone: "", designation: "", department: "",
-  dateOfBirth: "", joiningDate: "", address: "", city: "",
-  state: "", pincode: "", emergencyContactName: "",
-  emergencyContactPhone: "", avatarUrl: "",
-  bank: {
-    accountHolder: "", bankName: "", accountNumber: "", ifsc: "", upiId: ""
-  }
-};
+export default function Settings({ admin }) {
+  const [form, setForm] =
+    useState(defaultForm);
 
-function mergeProfile(value) {
-  return {
-    ...emptyProfile,
-    ...(value || {}),
-    bank: { ...emptyProfile.bank, ...(value?.bank || {}) }
-  };
-}
+  const [loading, setLoading] =
+    useState(true);
 
-export default function Settings({ admin, isTeamMember = false }) {
-  const [profile, setProfile] = useState(emptyProfile);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [passwords, setPasswords] = useState({
-    currentPassword: "", newPassword: "", confirmPassword: ""
-  });
-  const [passwordSaving, setPasswordSaving] = useState(false);
-  const [showPasswords, setShowPasswords] = useState(false);
-  const [earnings, setEarnings] = useState({ data: [], totals: { total: 0, earned: 0, pending: 0, paid: 0 } });
+  const [saving, setSaving] =
+    useState(false);
+
+  const [passwordLoading, setPasswordLoading] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [passwordMessage, setPasswordMessage] =
+    useState("");
+
+  const [passwordError, setPasswordError] =
+    useState("");
+
+  const [theme, setTheme] =
+    useState(
+      () =>
+        localStorage.getItem(
+          "balaji_theme"
+        ) || "light"
+    );
+
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
+
+  const [showNewPassword, setShowNewPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+
+  const [passwords, setPasswords] =
+    useState({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
 
   useEffect(() => {
-    load();
-  }, [isTeamMember, admin]);
+    loadProfile();
+  }, []);
 
-  async function load() {
+  async function loadProfile() {
     setLoading(true);
     setError("");
+
     try {
-      if (!isTeamMember) {
-        const result = await api("/auth/me");
-        const data = result.data || admin || {};
-        setProfile({
-          ...emptyProfile,
-          fullName: data.name || "",
-          phone: data.phone || "",
-          avatarUrl: data.avatarUrl || "",
-          department: "Administration",
-          designation: "Administrator",
-        });
-      } else {
-        const [profileResult, earningsResult] = await Promise.all([
-          api("/team-auth/me"),
-          api("/team-auth/earnings")
-        ]);
-        const data = profileResult.data || {};
-        setProfile(mergeProfile(data.profile));
-        setEarnings({
-          data: earningsResult.data || [],
-          totals: earningsResult.totals || { total: 0, earned: 0, pending: 0, paid: 0 }
-        });
-      }
-    } catch (e) {
-      setError(e.message || "Unable to load profile.");
+      const result =
+        await api("/auth/me");
+
+      const data =
+        result.data ||
+        admin?.data ||
+        admin ||
+        {};
+
+      setForm({
+        name: data.name || "",
+        email: data.email || "",
+        phone: data.phone || "",
+        businessName:
+          data.businessName ||
+          "BalajiInfoTech",
+        avatarUrl:
+          data.avatarUrl || "",
+      });
+    } catch (err) {
+      console.error(
+        "PROFILE LOAD ERROR:",
+        err
+      );
+
+      setError(
+        err.message ||
+          "Unable to load profile."
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  function update(key, value) {
-    setProfile(current => ({ ...current, [key]: value }));
-    setMessage(""); setError("");
-  }
-
-  function updateBank(key, value) {
-    setProfile(current => ({
+  function updateField(field, value) {
+    setForm((current) => ({
       ...current,
-      bank: { ...current.bank, [key]: value }
+      [field]: value,
     }));
-    setMessage(""); setError("");
+
+    setMessage("");
+    setError("");
   }
 
-  function handleImage(event) {
+  function handleImageUpload(event) {
     const file = event.target.files?.[0];
+
     if (!file) return;
-    if (!file.type.startsWith("image/")) return setError("Please select an image.");
-    if (file.size > 2 * 1024 * 1024) return setError("Image must be under 2 MB.");
+
+    if (!file.type.startsWith("image/")) {
+      setError("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setError("Image size must be less than 2 MB.");
+      return;
+    }
+
     const reader = new FileReader();
-    reader.onload = () => update("avatarUrl", String(reader.result || ""));
+
+    reader.onload = () => {
+      setForm((current) => ({
+        ...current,
+        avatarUrl: reader.result,
+      }));
+
+      setMessage("");
+      setError("");
+    };
+
+    reader.onerror = () => {
+      setError("Unable to read the selected image.");
+    };
+
     reader.readAsDataURL(file);
   }
 
   async function saveProfile(event) {
     event.preventDefault();
-    setSaving(true); setMessage(""); setError("");
+
+    if (saving) return;
+
+    setMessage("");
+    setError("");
+
+    if (!form.name.trim()) {
+      setError("Name is required.");
+      return;
+    }
+
+    // Email is preserved from the authenticated admin session/API when
+    // the form state does not contain it. Do not block profile saves
+    // merely because the email field is not editable in this UI.
+    const profileEmail =
+      form.email?.trim() ||
+      admin?.email?.trim() ||
+      "";
+
+    setSaving(true);
+
     try {
-      if (isTeamMember) {
-        await api("/team-auth/profile", {
-          method: "PUT",
-          body: JSON.stringify(profile)
-        });
-        setMessage("Team profile saved successfully.");
-        await load();
-      } else {
+      const result =
         await api("/auth/profile", {
           method: "PUT",
+
           body: JSON.stringify({
-            name: profile.fullName,
-            phone: profile.phone,
-            avatarUrl: profile.avatarUrl
-          })
+            name: form.name.trim(),
+            email: profileEmail,
+            phone:
+              form.phone.trim(),
+            businessName:
+              form.businessName.trim(),
+            avatarUrl:
+              form.avatarUrl.trim(),
+          }),
         });
-        setMessage("Admin profile saved successfully.");
-        setTimeout(() => window.location.reload(), 700);
+
+      if (!result.success) {
+        throw new Error(
+          result.message ||
+            "Unable to update profile."
+        );
       }
-    } catch (e) {
-      setError(e.message || "Unable to save profile.");
+
+      setMessage(
+        "Profile updated successfully."
+      );
+
+      /*
+       * Reload the application so App.jsx
+       * calls /auth/me again and the updated
+       * name/avatar appears everywhere.
+       */
+      setTimeout(() => {
+        window.location.reload();
+      }, 900);
+
+    } catch (err) {
+      console.error(
+        "PROFILE UPDATE ERROR:",
+        err
+      );
+
+      setError(
+        err.message ||
+          "Unable to update profile."
+      );
     } finally {
       setSaving(false);
     }
   }
 
-  async function changePassword(event) {
+  function changeTheme(nextTheme) {
+    setTheme(nextTheme);
+
+    localStorage.setItem(
+      "balaji_theme",
+      nextTheme
+    );
+
+    document.documentElement.dataset.theme =
+      nextTheme;
+
+    document.documentElement.classList.toggle(
+      "dark",
+      nextTheme === "dark"
+    );
+
+    document.documentElement.classList.toggle(
+      "light",
+      nextTheme === "light"
+    );
+  }
+
+  function updatePasswordField(
+    field,
+    value
+  ) {
+    setPasswords((current) => ({
+      ...current,
+      [field]: value,
+    }));
+
+    setPasswordMessage("");
+    setPasswordError("");
+  }
+
+  async function changePassword(
+    event
+  ) {
     event.preventDefault();
-    setMessage(""); setError("");
-    if (passwords.newPassword.length < 8) return setError("New password must be at least 8 characters.");
-    if (passwords.newPassword !== passwords.confirmPassword) return setError("Passwords do not match.");
-    setPasswordSaving(true);
+
+    if (passwordLoading) return;
+
+    setPasswordMessage("");
+    setPasswordError("");
+
+    if (
+      !passwords.currentPassword
+    ) {
+      setPasswordError(
+        "Enter your current password."
+      );
+      return;
+    }
+
+    if (
+      !passwords.newPassword
+    ) {
+      setPasswordError(
+        "Enter a new password."
+      );
+      return;
+    }
+
+    if (
+      passwords.newPassword.length < 8
+    ) {
+      setPasswordError(
+        "New password must be at least 8 characters."
+      );
+      return;
+    }
+
+    if (
+      passwords.newPassword !==
+      passwords.confirmPassword
+    ) {
+      setPasswordError(
+        "New passwords do not match."
+      );
+      return;
+    }
+
+    if (
+      passwords.currentPassword ===
+      passwords.newPassword
+    ) {
+      setPasswordError(
+        "New password must be different from current password."
+      );
+      return;
+    }
+
+    setPasswordLoading(true);
+
     try {
-      await api(isTeamMember ? "/team-auth/password" : "/auth/change-password", {
-        method: isTeamMember ? "PUT" : "POST",
-        body: JSON.stringify({
-          currentPassword: passwords.currentPassword,
-          newPassword: passwords.newPassword
-        })
+      const result =
+        await api(
+          "/auth/change-password",
+          {
+            method: "POST",
+
+            body: JSON.stringify({
+              currentPassword:
+                passwords.currentPassword,
+
+              newPassword:
+                passwords.newPassword,
+            }),
+          }
+        );
+
+      if (!result.success) {
+        throw new Error(
+          result.message ||
+            "Unable to change password."
+        );
+      }
+
+      setPasswordMessage(
+        "Password changed successfully."
+      );
+
+      setPasswords({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
       });
-      setPasswords({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      setMessage("Password changed successfully.");
-    } catch (e) {
-      setError(e.message || "Unable to change password.");
+
+    } catch (err) {
+      console.error(
+        "PASSWORD CHANGE ERROR:",
+        err
+      );
+
+      setPasswordError(
+        err.message ||
+          "Unable to change password."
+      );
     } finally {
-      setPasswordSaving(false);
+      setPasswordLoading(false);
     }
   }
 
-  const total = useMemo(() => Number(earnings.totals?.total || 0), [earnings]);
+  const avatarLetter =
+    form.name
+      ?.trim()
+      ?.charAt(0)
+      ?.toUpperCase() || "A";
 
-  if (loading) return <section className="content"><div className="dashboard-card">LOADING PROFILE...</div></section>;
+  if (loading) {
+    return (
+      <section className="content">
+        <div className="profile-loading">
+          LOADING PROFILE...
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className="content team-settings-page">
+    <section className="content profile-settings">
       <style>{`
-        .team-settings-page{
-          display:grid;
-          gap:18px;
-          color:var(--dash-text,#172033);
-        }
-        .ts-head{display:flex;justify-content:space-between;align-items:end;gap:16px}
-        .ts-head small{color:#ff5a00;font-weight:900;letter-spacing:.16em}
-        .ts-head h1{margin:6px 0 0;color:var(--dash-text,#172033)}
-        .ts-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-        .ts-card{
-          background:var(--dash-surface,#fff);
-          border:1px solid var(--dash-border,#dfe4ea);
-          border-radius:18px;
-          padding:20px;
-          color:var(--dash-text,#172033);
-        }
-        .ts-title{display:flex;align-items:center;gap:11px;margin-bottom:16px}
-        .ts-icon{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:rgba(255,90,0,.12);color:#ff5a00}
-        .ts-title h3{margin:0;font-size:15px;color:var(--dash-text,#172033)}
-        .ts-title p{margin:3px 0 0;color:var(--dash-muted,#64748b);font-size:12px}
-        .ts-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
-        .ts-field{display:grid;gap:7px}
-        .ts-field.full{grid-column:1/-1}
-        .ts-field label{font-size:10px;font-weight:900;letter-spacing:.1em;color:var(--dash-muted,#64748b)}
-        .ts-field input,.ts-field textarea{
-          width:100%;
-          box-sizing:border-box;
-          border:1px solid var(--dash-border,#dfe4ea);
-          background:var(--dash-input,#fff);
-          color:var(--dash-text,#172033);
-          border-radius:10px;
-          padding:11px 12px;
-          outline:none;
-        }
-        .ts-field input::placeholder,.ts-field textarea::placeholder{color:var(--dash-muted,#98a2b3)}
-        .ts-field input:focus,.ts-field textarea:focus{border-color:#ff5a00;box-shadow:0 0 0 3px rgba(255,90,0,.10)}
-        .ts-avatar{display:flex;align-items:center;gap:14px;margin-bottom:16px}
-        .ts-avatar-img{width:76px;height:76px;border-radius:50%;overflow:hidden;background:var(--dash-surface-2,#f4f6f8);display:grid;place-items:center;color:#ff5a00;font-weight:900;font-size:26px;border:2px solid rgba(255,90,0,.35)}
-        .ts-avatar-img img{width:100%;height:100%;object-fit:cover}
-        .ts-upload{
-          display:inline-flex;
-          align-items:center;
-          gap:8px;
-          padding:9px 12px;
-          border:1px solid var(--dash-border,#dfe4ea);
-          background:var(--dash-surface-2,#fff);
-          color:var(--dash-text,#172033);
-          border-radius:10px;
-          cursor:pointer;
-          font-size:12px;
-          font-weight:800;
-        }
-        .ts-upload:hover{border-color:#ff5a00;color:#ff5a00}
-        .ts-upload input{display:none}
-        .ts-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
-        .ts-save{
-          border:0;
-          background:#ff5a00;
-          color:#fff !important;
-          -webkit-text-fill-color:#fff !important;
-          border-radius:10px;
-          padding:11px 17px;
-          font-weight:900;
-          cursor:pointer;
-          box-shadow:0 8px 20px rgba(255,90,0,.18);
-        }
-        .ts-save *{color:#fff !important;-webkit-text-fill-color:#fff !important}
-        .ts-save svg{color:#fff !important;stroke:#fff !important}
-        .ts-save:hover{background:#e95100;color:#fff !important;-webkit-text-fill-color:#fff !important}
-        .ts-save:disabled{opacity:.6;color:#fff !important;-webkit-text-fill-color:#fff !important}
-        .ts-alert{padding:11px 13px;border-radius:10px;background:rgba(255,90,0,.1);border:1px solid rgba(255,90,0,.25);color:#b54708;font-size:12px}
-        .ts-success{padding:11px 13px;border-radius:10px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);color:#16803c;font-size:12px}
-        .ts-earnings{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
-        .ts-stat{padding:13px;border-radius:12px;background:var(--dash-surface-2,#f7f8fa);border:1px solid var(--dash-border,#e5e7eb)}
-        .ts-stat span{display:block;color:var(--dash-muted,#64748b);font-size:10px;font-weight:800}
-        .ts-stat strong{display:block;margin-top:5px;font-size:18px;color:var(--dash-text,#172033)}
-        .ts-table{width:100%;border-collapse:collapse;font-size:12px;color:var(--dash-text,#172033)}
-        .ts-table th,.ts-table td{text-align:left;padding:10px;border-bottom:1px solid var(--dash-border,#e5e7eb)}
-        .ts-table th{color:var(--dash-muted,#64748b);font-size:10px;letter-spacing:.08em}
-        html[data-theme="dark"] .ts-card{background:#15181d;border-color:#2b3139;color:#f3f4f6}
-        html[data-theme="dark"] .ts-title h3,
-        html[data-theme="dark"] .ts-head h1,
-        html[data-theme="dark"] .ts-stat strong,
-        html[data-theme="dark"] .ts-table{color:#f3f4f6}
-        html[data-theme="dark"] .ts-field input,
-        html[data-theme="dark"] .ts-field textarea{
-          background:#0d0f12;
-          border-color:#30353d;
-          color:#fff;
-        }
-        html[data-theme="dark"] .ts-avatar-img{background:#252a31}
-        html[data-theme="dark"] .ts-upload{background:#101318;border-color:#3b424c;color:#f3f4f6}
-        html[data-theme="dark"] .ts-stat{background:#0d0f12;border-color:#252b33}
-        html[data-theme="dark"] .ts-table th,
-        html[data-theme="dark"] .ts-field label,
-        html[data-theme="dark"] .ts-title p{color:#8f98a5}
-        @media(max-width:800px){.ts-grid,.ts-fields{grid-template-columns:1fr}.ts-card.full{grid-column:auto}.ts-earnings{grid-template-columns:repeat(2,1fr)}}
-      `}</style>
 
-      <div className="ts-head">
+        .profile-settings {
+          max-width: 1180px;
+          margin: 0 auto;
+        }
+
+        .profile-header {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 20px;
+          margin-bottom: 20px;
+        }
+
+        .profile-header small {
+          display: block;
+          color: #ff5a00;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: .18em;
+        }
+
+        .profile-header h2 {
+          margin: 5px 0 0;
+          color: var(--dash-text, #111827);
+          font-size: 26px;
+        }
+
+        .profile-grid {
+          display: grid;
+          grid-template-columns:
+            minmax(0, 1.4fr)
+            minmax(300px, .8fr);
+          gap: 18px;
+        }
+
+        .profile-card {
+          background: var(--dash-surface, #fff);
+          border: 1px solid
+            var(--dash-border, #dfe4ea);
+          border-radius: 16px;
+          padding: 20px;
+          box-sizing: border-box;
+        }
+
+        .profile-card.full {
+          grid-column: 1 / -1;
+        }
+
+        .profile-card-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+
+        .profile-card-icon {
+          width: 38px;
+          height: 38px;
+          display: grid;
+          place-items: center;
+          border-radius: 10px;
+          background: rgba(255, 90, 0, .09);
+          color: #ff5a00;
+          flex: 0 0 auto;
+        }
+
+        .profile-card-header h3 {
+          margin: 0;
+          color: var(--dash-text, #111827);
+          font-size: 15px;
+        }
+
+        .profile-card-header p {
+          margin: 3px 0 0;
+          color: var(--dash-muted, #64748b);
+          font-size: 10px;
+        }
+
+        .profile-avatar-section {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          padding: 15px;
+          margin-bottom: 18px;
+          border-radius: 12px;
+          background:
+            var(--dash-surface-2, #f7f8fa);
+          border: 1px solid
+            var(--dash-border, #e3e7ec);
+        }
+
+        .profile-avatar {
+          width: 66px;
+          height: 66px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          overflow: hidden;
+          flex: 0 0 auto;
+          background: #ff5a00;
+          color: #fff;
+          font-size: 23px;
+          font-weight: 900;
+        }
+
+        .profile-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .profile-avatar-info strong {
+          display: block;
+          color: var(--dash-text, #111827);
+          font-size: 14px;
+        }
+
+        .profile-avatar-info span {
+          display: block;
+          margin-top: 4px;
+          color: var(--dash-muted, #64748b);
+          font-size: 10px;
+        }
+
+        .profile-fields {
+          display: grid;
+          grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+          gap: 15px;
+        }
+
+        .profile-field {
+          display: grid;
+          gap: 7px;
+        }
+
+        .profile-field.full {
+          grid-column: 1 / -1;
+        }
+
+        .profile-field label {
+          color: var(--dash-muted, #64748b);
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: .06em;
+        }
+
+        .profile-field input {
+          width: 100%;
+          min-height: 44px;
+          box-sizing: border-box;
+          border: 1px solid
+            var(--dash-border, #dfe4ea);
+          border-radius: 10px;
+          padding: 0 12px;
+          outline: none;
+          background:
+            var(--dash-surface-2, #fff);
+          color:
+            var(--dash-text, #111827);
+          font-size: 13px;
+        }
+
+        .profile-field input:focus {
+          border-color: #ff5a00;
+          box-shadow:
+            0 0 0 3px
+            rgba(255, 90, 0, .09);
+        }
+
+        .profile-upload-box {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          padding: 14px;
+          border: 1px solid var(--dash-border, #dfe4ea);
+          border-radius: 12px;
+          background: var(--dash-surface-2, #f7f8fa);
+        }
+
+        .profile-upload-preview {
+          width: 70px;
+          height: 70px;
+          flex: 0 0 auto;
+          display: grid;
+          place-items: center;
+          overflow: hidden;
+          border-radius: 50%;
+          background: #ff5a00;
+          color: #fff;
+        }
+
+        .profile-upload-preview img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .profile-upload-info {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 5px;
+        }
+
+        .profile-upload-info strong {
+          color: var(--dash-text, #111827);
+          font-size: 12px;
+        }
+
+        .profile-upload-info span {
+          color: var(--dash-muted, #64748b);
+          font-size: 9px;
+        }
+
+        .profile-upload-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          margin-top: 5px;
+          padding: 9px 12px;
+          border-radius: 8px;
+          background: #ff5a00;
+          color: #fff !important;
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .profile-upload-button svg {
+          color: #fff !important;
+          stroke: currentColor;
+        }
+
+        .profile-upload-button:hover {
+          opacity: .9;
+        }
+
+        .profile-save-row {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 18px;
+        }
+
+        .profile-save-button {
+          min-height: 44px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 0 18px;
+          border: 0;
+          border-radius: 10px;
+          background: #ff5a00;
+          color: #fff !important;
+          font-size: 11px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .profile-save-button svg {
+          color: #fff !important;
+          stroke: currentColor;
+        }
+
+        .profile-save-button:hover,
+        .profile-upload-button:hover,
+        .password-save:hover {
+          background: #e95100;
+          color: #fff !important;
+        }
+
+        .profile-save-button:disabled {
+          opacity: .65;
+          cursor: not-allowed;
+          color: #fff !important;
+        }
+
+        .status-message {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          margin-top: 12px;
+          padding: 10px 12px;
+          border-radius: 9px;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .status-success {
+          color: #15803d;
+          background: rgba(22, 163, 74, .08);
+        }
+
+        .status-error {
+          color: #dc2626;
+          background: rgba(220, 38, 38, .08);
+        }
+
+        .password-field {
+          position: relative;
+        }
+
+        .password-field input {
+          padding-right: 43px;
+        }
+
+        .password-eye {
+          position: absolute;
+          right: 9px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 32px;
+          height: 32px;
+          display: grid;
+          place-items: center;
+          border: 0;
+          background: transparent;
+          color: var(--dash-muted, #64748b);
+          cursor: pointer;
+        }
+
+        .password-fields {
+          display: grid;
+          gap: 14px;
+        }
+
+        .password-save {
+          width: 100%;
+          min-height: 43px;
+          margin-top: 16px;
+          border: 0;
+          border-radius: 10px;
+          background: #ff5a00;
+          color: #fff !important;
+          font-size: 10px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .password-save svg {
+          color: #fff !important;
+        }
+
+        .password-save:disabled {
+          opacity: .65;
+          color: #fff !important;
+        }
+
+        .security-box {
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          padding: 13px 14px;
+          border-radius: 10px;
+          background: rgba(37, 99, 235, .07);
+          border: 1px solid rgba(37, 99, 235, .08);
+          color: var(--dash-text, #475569);
+          font-size: 10px;
+          line-height: 1.6;
+        }
+
+        .security-box svg {
+          color: #2563eb;
+          flex: 0 0 auto;
+        }
+
+        .theme-options {
+          display: grid;
+          grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .theme-button {
+          min-height: 82px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          border: 1px solid
+            var(--dash-border, #dfe4ea);
+          border-radius: 11px;
+          background:
+            var(--dash-surface-2, #fff);
+          color: var(--dash-muted, #64748b);
+          font-size: 10px;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .theme-button.active {
+          color: #ff5a00;
+          border-color: #ff5a00;
+          box-shadow:
+            0 0 0 2px
+            rgba(255, 90, 0, .08);
+        }
+
+        .profile-loading {
+          min-height: 300px;
+          display: grid;
+          place-items: center;
+          color: var(--dash-muted, #64748b);
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: .12em;
+        }
+
+        html[data-theme="dark"]
+          .profile-card {
+          background: #15181d;
+          border-color: #2b3139;
+        }
+
+        html[data-theme="dark"]
+          .profile-avatar-section,
+        html[data-theme="dark"]
+          .profile-field input,
+        html[data-theme="dark"]
+          .theme-button {
+          background: #101318;
+          border-color: #2b3139;
+        }
+
+        html[data-theme="dark"]
+          .profile-header h2,
+        html[data-theme="dark"]
+          .profile-card-header h3,
+        html[data-theme="dark"]
+          .profile-avatar-info strong,
+        html[data-theme="dark"]
+          .profile-field input {
+          color: #f3f4f6;
+        }
+
+        html[data-theme="dark"] .security-box {
+          background: rgba(37, 99, 235, .10);
+          border-color: rgba(96, 165, 250, .10);
+          color: #cbd5e1;
+        }
+
+        html[data-theme="dark"] .security-box svg {
+          color: #60a5fa;
+        }
+
+        html[data-theme="dark"] .profile-upload-box {
+          background: #101318;
+          border-color: #2b3139;
+        }
+
+        @media (max-width: 600px) {
+          .profile-upload-box {
+            align-items: flex-start;
+          }
+
+          .profile-upload-preview {
+            width: 58px;
+            height: 58px;
+          }
+
+          .profile-upload-info {
+            min-width: 0;
+          }
+        }
+
+
+        /* FINAL BUTTON TEXT COLOR OVERRIDE */
+        button.profile-save-button,
+        button.password-save,
+        label.profile-upload-button {
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+          text-decoration: none !important;
+        }
+
+        button.profile-save-button *,
+        button.password-save *,
+        label.profile-upload-button * {
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+        }
+
+        button.profile-save-button svg,
+        button.password-save svg,
+        label.profile-upload-button svg {
+          color: #ffffff !important;
+          stroke: #ffffff !important;
+        }
+
+        @media (max-width: 850px) {
+          .profile-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .profile-card.full {
+            grid-column: auto;
+          }
+        }
+
+        @media (max-width: 600px) {
+          .profile-header {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .profile-fields {
+            grid-template-columns: 1fr;
+          }
+
+          .profile-field.full {
+            grid-column: auto;
+          }
+
+          .theme-options {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+      
+        /* FINAL ACTION BUTTON COLORS */
+        .profile-settings .profile-save-button,
+        .profile-settings .password-save {
+          background: #ff5a00 !important;
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+          text-shadow: none !important;
+        }
+
+        .profile-settings .profile-save-button *,
+        .profile-settings .password-save * {
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+        }
+
+        .profile-settings .profile-save-button svg,
+        .profile-settings .password-save svg {
+          color: #ffffff !important;
+          stroke: #ffffff !important;
+          fill: none !important;
+        }
+
+        .profile-settings .profile-save-button:hover,
+        .profile-settings .password-save:hover {
+          background: #e95100 !important;
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+        }
+
+        .profile-settings .profile-save-button:disabled,
+        .profile-settings .password-save:disabled {
+          color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
+        }
+`}
+</style>
+
+
+      <div className="profile-header">
         <div>
-          <small>{isTeamMember ? "TEAM MEMBER ACCOUNT" : "ADMIN CONTROL"}</small>
-          <h1>{isTeamMember ? "My Settings" : "Settings"}</h1>
+          <small>
+            ACCOUNT & SECURITY
+          </small>
+
+          <h2>Profile Settings</h2>
         </div>
       </div>
 
-      {error && <div className="ts-alert"><AlertCircle size={14}/> {error}</div>}
-      {message && <div className="ts-success"><CheckCircle2 size={14}/> {message}</div>}
 
-      <form onSubmit={saveProfile}>
-        <div className="ts-grid">
-          <section className="ts-card full">
-            <div className="ts-title"><div className="ts-icon"><UserRound size={18}/></div><div><h3>Profile</h3><p>{isTeamMember ? "Your personal and work information" : "Administrator account information"}</p></div></div>
-            <div className="ts-avatar">
-              <div className="ts-avatar-img">
-                {profile.avatarUrl ? <img src={profile.avatarUrl} alt="Profile"/> : (profile.fullName || "A").charAt(0).toUpperCase()}
+      <div className="profile-grid">
+
+        {/* =========================
+            PROFILE
+        ========================= */}
+
+        <section className="profile-card full">
+
+          <div className="profile-card-header">
+            <div className="profile-card-icon">
+              <UserRound size={18} />
+            </div>
+
+            <div>
+              <h3>Admin Profile</h3>
+              <p>
+                Manage your administrator
+                account information.
+              </p>
+            </div>
+          </div>
+
+
+          <form onSubmit={saveProfile}>
+
+            <div className="profile-avatar-section">
+
+              <div className="profile-avatar">
+
+                {form.avatarUrl ? (
+                  <img
+                    src={form.avatarUrl}
+                    alt="Admin profile"
+                    onError={(event) => {
+                      event.currentTarget.style.display =
+                        "none";
+                    }}
+                  />
+                ) : (
+                  avatarLetter
+                )}
+
               </div>
-              <div>
-                <strong>{profile.fullName || admin?.name || "Team Member"}</strong>
-                <div style={{color:"var(--dash-muted,#64748b)",fontSize:12,margin:"4px 0 9px"}}>{admin?.email || ""}</div>
-                <label className="ts-upload"><Upload size={14}/> Upload photo<input type="file" accept="image/*" onChange={handleImage}/></label>
+
+
+              <div className="profile-avatar-info">
+
+                <strong>
+                  {form.name ||
+                    "Administrator"}
+                </strong>
+
+                <span>
+                  Administrator Account
+                </span>
+
               </div>
-            </div>
-            <div className="ts-fields">
-              <div className="ts-field"><label>FULL NAME</label><input value={profile.fullName} onChange={e=>update("fullName",e.target.value)}/></div>
-              <div className="ts-field"><label>PHONE</label><input value={profile.phone} onChange={e=>update("phone",e.target.value)}/></div>
-              <div className="ts-field"><label>DESIGNATION</label><input value={profile.designation} onChange={e=>update("designation",e.target.value)}/></div>
-              <div className="ts-field"><label>DEPARTMENT</label><input value={profile.department} onChange={e=>update("department",e.target.value)}/></div>
-              <div className="ts-field"><label>DATE OF BIRTH</label><input type="date" value={profile.dateOfBirth} onChange={e=>update("dateOfBirth",e.target.value)}/></div>
-              <div className="ts-field"><label>JOINING DATE</label><input type="date" value={profile.joiningDate} onChange={e=>update("joiningDate",e.target.value)}/></div>
-              <div className="ts-field full"><label>ADDRESS</label><textarea value={profile.address} onChange={e=>update("address",e.target.value)}/></div>
-              <div className="ts-field"><label>CITY</label><input value={profile.city} onChange={e=>update("city",e.target.value)}/></div>
-              <div className="ts-field"><label>STATE</label><input value={profile.state} onChange={e=>update("state",e.target.value)}/></div>
-              <div className="ts-field"><label>PINCODE</label><input value={profile.pincode} onChange={e=>update("pincode",e.target.value)}/></div>
-              <div className="ts-field"><label>EMERGENCY CONTACT</label><input value={profile.emergencyContactName} onChange={e=>update("emergencyContactName",e.target.value)}/></div>
-              <div className="ts-field"><label>EMERGENCY PHONE</label><input value={profile.emergencyContactPhone} onChange={e=>update("emergencyContactPhone",e.target.value)}/></div>
-            </div>
-          </section>
 
-          {isTeamMember && <section className="ts-card full">
-            <div className="ts-title"><div className="ts-icon"><WalletCards size={18}/></div><div><h3>Payment Details</h3><p>Bank account and UPI used for your team payouts</p></div></div>
-            <div className="ts-fields">
-              <div className="ts-field"><label>ACCOUNT HOLDER</label><input value={profile.bank.accountHolder} onChange={e=>updateBank("accountHolder",e.target.value)}/></div>
-              <div className="ts-field"><label>BANK NAME</label><input value={profile.bank.bankName} onChange={e=>updateBank("bankName",e.target.value)}/></div>
-              <div className="ts-field"><label>ACCOUNT NUMBER</label><input value={profile.bank.accountNumber} onChange={e=>updateBank("accountNumber",e.target.value)}/></div>
-              <div className="ts-field"><label>IFSC</label><input value={profile.bank.ifsc} onChange={e=>updateBank("ifsc",e.target.value.toUpperCase())}/></div>
-              <div className="ts-field"><label>UPI ID</label><input value={profile.bank.upiId} onChange={e=>updateBank("upiId",e.target.value)}/></div>
             </div>
-          </section>}
 
-          <section className="ts-card full">
-            <div className="ts-title"><div className="ts-icon"><LockKeyhole size={18}/></div><div><h3>Security</h3><p>Change only your own account password</p></div></div>
-            <div className="ts-fields">
-              <div className="ts-field"><label>CURRENT PASSWORD</label><input type={showPasswords ? "text":"password"} value={passwords.currentPassword} onChange={e=>setPasswords(p=>({...p,currentPassword:e.target.value}))}/></div>
-              <div className="ts-field"><label>NEW PASSWORD</label><input type={showPasswords ? "text":"password"} value={passwords.newPassword} onChange={e=>setPasswords(p=>({...p,newPassword:e.target.value}))}/></div>
-              <div className="ts-field"><label>CONFIRM PASSWORD</label><input type={showPasswords ? "text":"password"} value={passwords.confirmPassword} onChange={e=>setPasswords(p=>({...p,confirmPassword:e.target.value}))}/></div>
-              <div className="ts-actions" style={{alignItems:"end"}}><button
-                  type="button"
-                  className="ts-upload"
-                  onClick={()=>setShowPasswords(v=>!v)}
-                  style={{color:"var(--dash-text,#172033)"}}
-                >
-                  {showPasswords
-                    ? <EyeOff size={14} style={{color:"#fff",stroke:"#fff"}}/>
-                    : <Eye size={14} style={{color:"#fff",stroke:"#fff"}}/>
+
+            <div className="profile-fields">
+
+              <div className="profile-field">
+
+                <label>
+                  FULL NAME
+                </label>
+
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(event) =>
+                    updateField(
+                      "name",
+                      event.target.value
+                    )
                   }
-                  <span style={{color:"#fff",WebkitTextFillColor:"#fff"}}>
-                    {showPasswords?"HIDE":"SHOW"}
-                  </span>
-                </button><button
-                  type="button"
-                  className="ts-save"
-                  disabled={passwordSaving}
-                  onClick={changePassword}
-                  style={{color:"#fff",WebkitTextFillColor:"#fff",backgroundColor:"#ff5a00"}}
-                >
-                  <span style={{color:"#fff",WebkitTextFillColor:"#fff"}}>
-                    {passwordSaving?"SAVING...":"CHANGE PASSWORD"}
-                  </span>
-                </button></div>
-            </div>
-          </section>
+                  placeholder="Admin Name"
+                />
 
-          {isTeamMember && <section className="ts-card full">
-            <div className="ts-title"><div className="ts-icon"><WalletCards size={18}/></div><div><h3>My Earnings</h3><p>Project-based earnings recorded by Admin</p></div></div>
-            <div className="ts-earnings">
-              <div className="ts-stat"><span>TOTAL</span><strong>₹{total.toLocaleString("en-IN")}</strong></div>
-              <div className="ts-stat"><span>EARNED</span><strong>₹{Number(earnings.totals?.earned||0).toLocaleString("en-IN")}</strong></div>
-              <div className="ts-stat"><span>PENDING</span><strong>₹{Number(earnings.totals?.pending||0).toLocaleString("en-IN")}</strong></div>
-              <div className="ts-stat"><span>PAID</span><strong>₹{Number(earnings.totals?.paid||0).toLocaleString("en-IN")}</strong></div>
+              </div>
+
+
+              <div className="profile-field">
+
+                <label>
+                  EMAIL ADDRESS
+                </label>
+
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) =>
+                    updateField(
+                      "email",
+                      event.target.value
+                    )
+                  }
+                  placeholder="admin@example.com"
+                />
+
+              </div>
+
+
+              <div className="profile-field">
+
+                <label>
+                  PHONE NUMBER
+                </label>
+
+                <input
+                  type="text"
+                  value={form.phone}
+                  onChange={(event) =>
+                    updateField(
+                      "phone",
+                      event.target.value
+                    )
+                  }
+                  placeholder="+91 XXXXX XXXXX"
+                />
+
+              </div>
+
+
+              <div className="profile-field">
+
+                <label>
+                  BUSINESS NAME
+                </label>
+
+                <input
+                  type="text"
+                  value={
+                    form.businessName
+                  }
+                  onChange={(event) =>
+                    updateField(
+                      "businessName",
+                      event.target.value
+                    )
+                  }
+                  placeholder="BalajiInfoTech"
+                />
+
+              </div>
+
+
+              <div className="profile-field full">
+
+                <label>
+                  PROFILE PHOTO
+                </label>
+
+                <div className="profile-upload-box">
+
+                  <div className="profile-upload-preview">
+                    {form.avatarUrl ? (
+                      <img
+                        src={form.avatarUrl}
+                        alt="Profile preview"
+                      />
+                    ) : (
+                      <UserRound size={25} />
+                    )}
+                  </div>
+
+                  <div className="profile-upload-info">
+                    <strong>
+                      Upload your profile photo
+                    </strong>
+
+                    <span>
+                      JPG, JPEG, PNG or WEBP · Max 2 MB
+                    </span>
+
+                    <label
+                      htmlFor="profile-image-upload"
+                      className="profile-upload-button"
+                    >
+                      <Upload size={14} />
+                      CHOOSE IMAGE
+                    </label>
+
+                    <input
+                      id="profile-image-upload"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleImageUpload}
+                      hidden
+                    />
+                  </div>
+
+                </div>
+
+              </div>
+
             </div>
-            <table className="ts-table"><thead><tr><th>PROJECT</th><th>AMOUNT</th><th>STATUS</th><th>DATE</th></tr></thead><tbody>
-              {earnings.data.map(row=><tr key={row._id}><td>{row.project?.title || row.projectTitle || "Project"}</td><td>₹{Number(row.amount||0).toLocaleString("en-IN")}</td><td>{String(row.status||"earned").toUpperCase()}</td><td>{row.earnedAt ? new Date(row.earnedAt).toLocaleDateString("en-IN") : "-"}</td></tr>)}
-              {!earnings.data.length && <tr><td colSpan="4">No project earnings recorded yet.</td></tr>}
-            </tbody></table>
-          </section>}
-        </div>
-        <div className="ts-actions">
-          <button
-            className="ts-save"
-            type="submit"
-            disabled={saving}
-            style={{color:"#fff",WebkitTextFillColor:"#fff",backgroundColor:"#ff5a00"}}
+
+
+            {message && (
+              <div className="status-message status-success">
+                <CheckCircle2
+                  size={15}
+                />
+                {message}
+              </div>
+            )}
+
+
+            {error && (
+              <div className="status-message status-error">
+                <AlertCircle
+                  size={15}
+                />
+                {error}
+              </div>
+            )}
+
+
+            <div className="profile-save-row">
+
+              <button
+                type="submit"
+                className="profile-save-button"
+                disabled={saving}
+              >
+                <Save size={15} />
+
+                {saving
+                  ? "SAVING..."
+                  : "SAVE PROFILE"}
+              </button>
+
+            </div>
+
+          </form>
+
+        </section>
+
+
+        {/* =========================
+            PASSWORD
+        ========================= */}
+
+        <section className="profile-card">
+
+          <div className="profile-card-header">
+            <div className="profile-card-icon">
+              <LockKeyhole
+                size={18}
+              />
+            </div>
+
+            <div>
+              <h3>
+                Change Password
+              </h3>
+
+              <p>
+                Keep your admin account secure.
+              </p>
+            </div>
+          </div>
+
+
+          <form
+            onSubmit={changePassword}
           >
-            <Save size={15} style={{color:"#fff",stroke:"#fff"}}/>
-            <span style={{color:"#fff",WebkitTextFillColor:"#fff"}}>
-              {saving?"SAVING...":"SAVE PROFILE"}
+
+            <div className="password-fields">
+
+              <div className="profile-field">
+
+                <label>
+                  CURRENT PASSWORD
+                </label>
+
+                <div className="password-field">
+
+                  <input
+                    type={
+                      showCurrentPassword
+                        ? "text"
+                        : "password"
+                    }
+                    value={
+                      passwords.currentPassword
+                    }
+                    onChange={(event) =>
+                      updatePasswordField(
+                        "currentPassword",
+                        event.target.value
+                      )
+                    }
+                    autoComplete="current-password"
+                    placeholder="Current password"
+                  />
+
+                  <button
+                    type="button"
+                    className="password-eye"
+                    onClick={() =>
+                      setShowCurrentPassword(
+                        (value) => !value
+                      )
+                    }
+                  >
+                    {showCurrentPassword ? (
+                      <EyeOff size={16} />
+                    ) : (
+                      <Eye size={16} />
+                    )}
+                  </button>
+
+                </div>
+
+              </div>
+
+
+              <div className="profile-field">
+
+                <label>
+                  NEW PASSWORD
+                </label>
+
+                <div className="password-field">
+
+                  <input
+                    type={
+                      showNewPassword
+                        ? "text"
+                        : "password"
+                    }
+                    value={
+                      passwords.newPassword
+                    }
+                    onChange={(event) =>
+                      updatePasswordField(
+                        "newPassword",
+                        event.target.value
+                      )
+                    }
+                    autoComplete="new-password"
+                    placeholder="Minimum 8 characters"
+                  />
+
+                  <button
+                    type="button"
+                    className="password-eye"
+                    onClick={() =>
+                      setShowNewPassword(
+                        (value) => !value
+                      )
+                    }
+                  >
+                    {showNewPassword ? (
+                      <EyeOff size={16} />
+                    ) : (
+                      <Eye size={16} />
+                    )}
+                  </button>
+
+                </div>
+
+              </div>
+
+
+              <div className="profile-field">
+
+                <label>
+                  CONFIRM PASSWORD
+                </label>
+
+                <div className="password-field">
+
+                  <input
+                    type={
+                      showConfirmPassword
+                        ? "text"
+                        : "password"
+                    }
+                    value={
+                      passwords.confirmPassword
+                    }
+                    onChange={(event) =>
+                      updatePasswordField(
+                        "confirmPassword",
+                        event.target.value
+                      )
+                    }
+                    autoComplete="new-password"
+                    placeholder="Repeat new password"
+                  />
+
+                  <button
+                    type="button"
+                    className="password-eye"
+                    onClick={() =>
+                      setShowConfirmPassword(
+                        (value) => !value
+                      )
+                    }
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff size={16} />
+                    ) : (
+                      <Eye size={16} />
+                    )}
+                  </button>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            {passwordMessage && (
+              <div className="status-message status-success">
+                <CheckCircle2
+                  size={15}
+                />
+                {passwordMessage}
+              </div>
+            )}
+
+
+            {passwordError && (
+              <div className="status-message status-error">
+                <AlertCircle
+                  size={15}
+                />
+                {passwordError}
+              </div>
+            )}
+
+
+            <button
+              type="submit"
+              className="password-save"
+              disabled={
+                passwordLoading
+              }
+            >
+              {passwordLoading
+                ? "UPDATING..."
+                : "CHANGE PASSWORD"}
+            </button>
+
+          </form>
+
+        </section>
+
+
+        {/* =========================
+            APPEARANCE
+        ========================= */}
+
+        <section className="profile-card">
+
+          <div className="profile-card-header">
+            <div className="profile-card-icon">
+              <Palette size={18} />
+            </div>
+
+            <div>
+              <h3>
+                Appearance
+              </h3>
+
+              <p>
+                Dashboard theme preference.
+              </p>
+            </div>
+          </div>
+
+
+          <div className="theme-options">
+
+            <button
+              type="button"
+              className={`theme-button ${
+                theme === "light"
+                  ? "active"
+                  : ""
+              }`}
+              onClick={() =>
+                changeTheme("light")
+              }
+            >
+              <Sun size={19} />
+              LIGHT
+            </button>
+
+
+            <button
+              type="button"
+              className={`theme-button ${
+                theme === "dark"
+                  ? "active"
+                  : ""
+              }`}
+              onClick={() =>
+                changeTheme("dark")
+              }
+            >
+              <Moon size={19} />
+              DARK
+            </button>
+
+          </div>
+
+        </section>
+
+
+        {/* =========================
+            SECURITY
+        ========================= */}
+
+        <section className="profile-card full">
+
+          <div className="profile-card-header">
+            <div className="profile-card-icon">
+              <ShieldCheck
+                size={18}
+              />
+            </div>
+
+            <div>
+              <h3>
+                Account Security
+              </h3>
+
+              <p>
+                Authentication information.
+              </p>
+            </div>
+          </div>
+
+
+          <div className="security-box">
+
+            <ShieldCheck
+              size={18}
+            />
+
+            <span>
+              Your profile updates are
+              authenticated using the existing
+              admin session. Passwords are
+              never stored as plain text and
+              are handled by the backend
+              password hashing system.
             </span>
-          </button>
-        </div>
-      </form>
+
+          </div>
+
+        </section>
+
+      </div>
     </section>
   );
 }
